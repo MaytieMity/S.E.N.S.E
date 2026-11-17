@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0b1220" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <title>S.E.N.S.E. Phone Monitor</title>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --card: #131d33;
+      --border: #233252;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+      --danger: #ef4444;
+      --accent: #38bdf8;
+    }
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { margin: 0; background: var(--bg); color: var(--text); padding: 14px; }
+    .wrap { max-width: 520px; margin: 0 auto; display: grid; gap: 12px; }
+    header { display: flex; justify-content: space-between; align-items: center; padding: 4px 2px; }
+    h1 { margin: 0; font-size: 1.15rem; letter-spacing: 0.04em; }
+    .pill { font-size: 0.78rem; padding: 4px 10px; border-radius: 999px; background: #1e293b; color: var(--muted); border: 1px solid var(--border); }
+    .pill.live { color: #86efac; border-color: rgba(34,197,94,0.45); background: rgba(34,197,94,0.12); }
+    .pill.demo { color: #7dd3fc; border-color: rgba(56,189,248,0.45); background: rgba(56,189,248,0.12); }
+    .pill.err { color: #fca5a5; border-color: rgba(239,68,68,0.45); background: rgba(239,68,68,0.12); }
+    .banner { padding: 16px; border-radius: 16px; border: 1px solid var(--border); background: var(--card); transition: 0.25s; }
+    .banner.ok { border-color: rgba(34,197,94,0.5); background: linear-gradient(135deg, rgba(34,197,94,0.16), var(--card)); }
+    .banner.alarm { border-color: rgba(239,68,68,0.8); background: linear-gradient(135deg, rgba(239,68,68,0.28), var(--card)); animation: pulse 1.2s infinite; }
+    @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.35); } 50% { box-shadow: 0 0 0 8px rgba(239,68,68,0); } }
+    .banner-title { font-size: 1.22rem; font-weight: 700; margin-bottom: 4px; }
+    .banner-sub { font-size: 0.86rem; color: var(--muted); }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
+    .card.full { grid-column: 1 / -1; }
+    .label { font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 6px; }
+    .value { font-size: 1.18rem; font-weight: 700; }
+    .value.ok { color: var(--ok); }
+    .value.danger { color: var(--danger); }
+    .value.warn { color: var(--warn); }
+    .meta { font-size: 0.82rem; color: var(--muted); margin-top: 6px; }
+    .bar { height: 7px; background: #0f172a; border-radius: 999px; overflow: hidden; margin-top: 8px; }
+    .bar > div { height: 100%; width: 0%; background: var(--accent); transition: width 0.2s, background 0.2s; }
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+    .row { display: flex; gap: 8px; align-items: center; }
+    input[type="text"] {
+      flex: 1; background: #0f172a; color: var(--text); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px; font-size: 0.88rem;
+    }
+    button { border: 0; border-radius: 12px; padding: 11px 10px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: #082f49; padding: 10px 14px; }
+    .btn-unlock { background: var(--warn); color: #111827; }
+    .btn-lock { background: #1e293b; color: var(--text); border: 1px solid var(--border); }
+    .btn-sim { background: rgba(239,68,68,0.18); color: #fecaca; border: 1px solid rgba(239,68,68,0.4); }
+    .toggle-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.88rem; }
+    ul { margin: 8px 0 0; padding: 0; list-style: none; max-height: 150px; overflow-y: auto; font-size: 0.82rem; color: var(--muted); }
+    li { padding: 5px 0; border-bottom: 1px solid rgba(148,163,184,0.12); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>S.E.N.S.E. MONITOR</h1>
+      <span id="connPill" class="pill">Disconnected</span>
+    </header>
+
+    <div class="card full">
+      <div class="label">ESP32 Device Address</div>
+      <div class="row">
+        <input id="espUrl" type="text" value="http://192.168.4.1" placeholder="http://192.168.4.1" />
+        <button class="btn-primary" onclick="saveHost()">Connect</button>
+      </div>
+      <div class="toggle-row" style="margin-top:10px;">
+        <span>Demo Mode (Preview without ESP32)</span>
+        <input id="demoToggle" type="checkbox" onchange="toggleDemo()" style="width:18px;height:18px;" />
+      </div>
+      <div id="demoControls" class="actions" style="display:none;">
+        <button class="btn-sim" onclick="simTrigger('quake')">Simulate Earthquake</button>
+        <button class="btn-sim" onclick="simTrigger('smoke')">Simulate Smoke</button>
+      </div>
+    </div>
+
+    <div id="banner" class="banner ok">
+      <div id="bannerTitle" class="banner-title">System Armed</div>
+      <div id="bannerSub" class="banner-sub">Waiting for sensor telemetry...</div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="label">Earthquake (ADXL345)</div>
+        <div id="quakeVal" class="value ok">NORMAL</div>
+        <div id="quakeMeta" class="meta">0.000 g | Peak: 0.000 g</div>
+        <div class="bar"><div id="quakeBar"></div></div>
+      </div>
+
+      <div class="card">
+        <div class="label">Smoke (JGN-301-A)</div>
+        <div id="smokeVal" class="value ok">CLEAR</div>
+        <div id="smokeMeta" class="meta">Detector: Standby</div>
+      </div>
+
+      <div class="card full">
+        <div class="label">Electric Doorknob</div>
+        <div id="doorVal" class="value ok">LOCKED</div>
+        <div id="doorMeta" class="meta">Auto-unlocks immediately on earthquake or smoke</div>
+        <div class="actions">
+          <button class="btn-unlock" onclick="sendDoorAction('unlock')">Emergency Unlock</button>
+          <button id="btnLock" class="btn-lock" onclick="sendDoorAction('lock')">Re-Lock Door</button>
+        </div>
+      </div>
+
+      <div class="card full">
+        <div class="toggle-row">
+          <span>Phone Alert Sound &amp; Vibration</span>
+          <input id="alertToggle" type="checkbox" checked style="width:18px;height:18px;" />
+        </div>
+      </div>
+
+      <div class="card full">
+        <div class="label">Event Log</div>
+        <ul id="logList"></ul>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const savedHost = localStorage.getItem('sense_esp_url');
+    if (savedHost) document.getElementById('espUrl').value = savedHost;
+
+    let prevKey = '';
+    let lastBeepAt = 0;
+    let demoState = {
+      quakeActive: false,
+      adxlReady: true,
+      currentTremorG: 0.008,
+      peakTremorG: 0.012,
+      smokeActive: false,
+      smokeRawSignal: false,
+      doorUnlocked: false,
+      latched: true,
+      uptimeSec: 0,
+      wifiMode: 'DEMO',
+      ip: 'Local Preview'
+    };
+
+    function getBaseUrl() {
+      return document.getElementById('espUrl').value.trim().replace(/\/+$/, '');
+    }
+
+    function saveHost() {
+      localStorage.setItem('sense_esp_url', getBaseUrl());
+      document.getElementById('demoToggle').checked = false;
+      toggleDemo();
+      addLog('Target ESP32 set to ' + getBaseUrl());
+      pollStatus();
+    }
+
+    function toggleDemo() {
+      const isDemo = document.getElementById('demoToggle').checked;
+      document.getElementById('demoControls').style.display = isDemo ? 'grid' : 'none';
+      if (isDemo) addLog('Demo simulation mode enabled.');
+      pollStatus();
+    }
+
+    function simTrigger(kind) {
+      if (kind === 'quake') {
+        demoState.quakeActive = !demoState.quakeActive;
+        demoState.currentTremorG = demoState.quakeActive ? 0.245 : 0.008;
+        demoState.peakTremorG = Math.max(demoState.peakTremorG, demoState.currentTremorG);
+      } else {
+        demoState.smokeActive = !demoState.smokeActive;
+        demoState.smokeRawSignal = demoState.smokeActive;
+      }
+      if (demoState.quakeActive || demoState.smokeActive) demoState.doorUnlocked = true;
+      renderStatus(demoState, true);
+    }
+
+    function addLog(msg) {
+      const li = document.createElement('li');
+      li.textContent = new Date().toLocaleTimeString() + ' — ' + msg;
+      const list = document.getElementById('logList');
+      list.prepend(li);
+      while (list.children.length > 25) list.removeChild(list.lastChild);
+    }
+
+    function triggerPhoneAlert() {
+      if (!document.getElementById('alertToggle').checked) return;
+      const now = Date.now();
+      if (now - lastBeepAt < 3000) return;
+      lastBeepAt = now;
+      if (window.AndroidBridge && window.AndroidBridge.vibrate) {
+        window.AndroidBridge.vibrate(500);
+      } else if (navigator.vibrate) {
+        navigator.vibrate([300, 150, 300]);
+      }
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.value = 880;
+        gain.gain.value = 0.08;
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        setTimeout(() => { osc.stop(); ctx.close(); }, 250);
+      } catch (_) {}
+    }
+
+    async function sendDoorAction(action) {
+      if (document.getElementById('demoToggle').checked) {
+        if (action === 'lock' && (demoState.quakeActive || demoState.smokeActive)) {
+          addLog('Blocked: hazard is still active.');
+          return;
+        }
+        demoState.doorUnlocked = (action === 'unlock');
+        if (!demoState.doorUnlocked) demoState.peakTremorG = 0.012;
+        addLog('Demo door ' + action + 'ed.');
+        renderStatus(demoState, true);
+        return;
+      }
+
+      try {
+        const res = await fetch(getBaseUrl() + '/api/' + action, { method: 'POST' });
+        const data = await res.json();
+        addLog(data.message || ('Door ' + action));
+        await pollStatus();
+      } catch (e) {
+        addLog('Command failed: ' + e.message);
+      }
+    }
+
+    function renderStatus(d, isDemo) {
+      const pill = document.getElementById('connPill');
+      pill.textContent = isDemo ? 'DEMO MODE' : ('LIVE (' + d.wifiMode + ')');
+      pill.className = 'pill ' + (isDemo ? 'demo' : 'live');
+
+      const hazard = d.quakeActive || d.smokeActive;
+      const banner = document.getElementById('banner');
+      banner.className = 'banner ' + (hazard ? 'alarm' : 'ok');
+      document.getElementById('bannerTitle').textContent = hazard
+        ? 'EMERGENCY: ' + [d.quakeActive ? 'EARTHQUAKE' : '', d.smokeActive ? 'SMOKE' : ''].filter(Boolean).join(' & ')
+        : (d.doorUnlocked ? 'Hazard Cleared — Door Unlocked' : 'All Clear — System Armed');
+      document.getElementById('bannerSub').textContent =
+        'Uptime: ' + d.uptimeSec + 's | IP: ' + d.ip + (d.adxlReady ? '' : ' | ADXL345 offline!');
+
+      const qEl = document.getElementById('quakeVal');
+      qEl.textContent = d.quakeActive ? 'EARTHQUAKE!' : (d.adxlReady ? 'NORMAL' : 'NO SENSOR');
+      qEl.className = 'value ' + (d.quakeActive ? 'danger' : (d.adxlReady ? 'ok' : 'warn'));
+      document.getElementById('quakeMeta').textContent =
+        d.currentTremorG.toFixed(3) + ' g | Peak: ' + d.peakTremorG.toFixed(3) + ' g';
+
+      const pct = Math.min(100, Math.round((d.currentTremorG / 0.30) * 100));
+      const bar = document.getElementById('quakeBar');
+      bar.style.width = pct + '%';
+      bar.style.background = d.quakeActive ? 'var(--danger)' : 'var(--accent)';
+
+      const sEl = document.getElementById('smokeVal');
+      sEl.textContent = d.smokeActive ? 'SMOKE DETECTED!' : 'CLEAR';
+      sEl.className = 'value ' + (d.smokeActive ? 'danger' : 'ok');
+      document.getElementById('smokeMeta').textContent =
+        'Signal: ' + (d.smokeRawSignal ? 'ALARMING' : 'Standby');
+
+      const doorEl = document.getElementById('doorVal');
+      doorEl.textContent = d.doorUnlocked ? 'UNLOCKED' : 'LOCKED';
+      doorEl.className = 'value ' + (d.doorUnlocked ? 'warn' : 'ok');
+      document.getElementById('btnLock').disabled = hazard || !d.doorUnlocked;
+
+      const key = `${d.quakeActive}-${d.smokeActive}-${d.doorUnlocked}`;
+      if (key !== prevKey) {
+        prevKey = key;
+        addLog(`Quake: ${d.quakeActive ? 'ALARM' : 'OK'}, Smoke: ${d.smokeActive ? 'ALARM' : 'OK'}, Door: ${d.doorUnlocked ? 'UNLOCKED' : 'LOCKED'}`);
+      }
+      if (hazard) triggerPhoneAlert();
+    }
+
+    async function pollStatus() {
+      if (document.getElementById('demoToggle').checked) {
+        demoState.uptimeSec += 1;
+        renderStatus(demoState, true);
+        return;
+      }
+
+      const pill = document.getElementById('connPill');
+      try {
+        const res = await fetch(getBaseUrl() + '/api/status', { cache: 'no-store' });
+        const d = await res.json();
+        renderStatus(d, false);
+      } catch (_) {
+        pill.textContent = 'Offline';
+        pill.className = 'pill err';
+      }
+    }
+
+    pollStatus();
+    setInterval(pollStatus, 800);
+  </script>
+</body>
+</html>
