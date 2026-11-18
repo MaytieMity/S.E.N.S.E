@@ -148,7 +148,8 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
       --danger: #dc2626;
       --accent: #38bdf8;
     }
-    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; scrollbar-width: none; -ms-overflow-style: none; }
+    *::-webkit-scrollbar { display: none; width: 0; height: 0; }
     html, body { margin: 0; min-height: 100dvh; background: var(--bg); color: var(--text); overflow-x: hidden; }
     body { padding: calc(14px + env(safe-area-inset-top)) 16px calc(18px + env(safe-area-inset-bottom)); display: flex; justify-content: center; }
     .app { width: 100%; max-width: 940px; display: flex; flex-direction: column; gap: 14px; }
@@ -223,10 +224,52 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
     .switch input:checked + .slider::before { transform: translateX(20px); }
     ul { margin: 0; padding: 0; list-style: none; max-height: 170px; overflow-y: auto; font-size: 0.74rem; color: #cbd5e1; }
     li { padding: 6px 0; border-bottom: 1px solid rgba(148,163,184,0.14); line-height: 1.35; }
-    @media (max-width: 520px) { .monitor-grid { grid-template-columns: 1fr; } .status-box { min-height: 155px; padding: 16px 12px; } }
+    @media (max-width: 520px) { .monitor-grid { grid-template-columns: 1fr; } .status-box { min-height: 135px; padding: 14px 12px; } }
+    .splash-screen { position: fixed; inset: 0; z-index: 200; background: #000000; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 24px; transition: opacity 0.35s ease; }
+    .splash-screen.hide { opacity: 0; pointer-events: none; }
+    .splash-logo { width: 112px; height: 112px; border-radius: 26px; box-shadow: 0 12px 36px rgba(29,69,131,0.45); animation: splashPop 0.45s ease-out; }
+    @keyframes splashPop { from { opacity: 0; transform: scale(0.86); } to { opacity: 1; transform: scale(1); } }
+    .splash-title { margin-top: 20px; font-size: 1.35rem; font-weight: 800; letter-spacing: 0.1em; color: #f8fafc; }
+    .splash-sub { margin-top: 6px; font-size: 0.82rem; color: #94a3b8; }
+    .splash-track { margin-top: 26px; width: 216px; height: 6px; border-radius: 999px; background: #1e293b; overflow: hidden; }
+    .splash-fill { width: 0%; height: 100%; border-radius: 999px; background: linear-gradient(90deg, #38bdf8, #22c55e); animation: splashLoad 2.85s linear forwards; }
+    @keyframes splashLoad { from { width: 0%; } to { width: 100%; } }
+    .splash-hint { margin-top: 12px; font-size: 0.76rem; color: #64748b; }
+    .about-hdr { display: flex; align-items: center; gap: 10px; }
+    .about-logo { width: 38px; height: 38px; border-radius: 10px; flex: 0 0 auto; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+    .about-app-name { font-size: 0.88rem; font-weight: 800; color: #f8fafc; letter-spacing: 0.03em; }
+    .about-app-ver { font-size: 0.72rem; color: #94a3b8; margin-top: 2px; }
+    .about-desc { font-size: 0.74rem; line-height: 1.45; color: #cbd5e1; padding-bottom: 8px; border-bottom: 1px solid rgba(148,163,184,0.16); }
+    .creator-list { display: flex; flex-direction: column; gap: 7px; }
+    .creator-row { display: flex; align-items: center; gap: 9px; background: #0d1526; border: 1px solid #1e293b; border-radius: 10px; padding: 8px 10px; }
+    .creator-avatar { width: 30px; height: 30px; border-radius: 9px; background: linear-gradient(135deg, #1d4583, #0d1d50); border: 1px solid rgba(255,255,255,0.16); color: #f8fafc; font-size: 0.7rem; font-weight: 800; display: flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+    .creator-info { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+    .creator-name { font-size: 0.78rem; font-weight: 700; color: #f8fafc; line-height: 1.25; }
+    .creator-sec { font-size: 0.68rem; font-weight: 700; color: #94a3b8; letter-spacing: 0.03em; }
+    .creator-email { font-size: 0.68rem; color: #7dd3fc; text-decoration: none; overflow-wrap: anywhere; }
+    .about-footer { font-size: 0.7rem; color: #64748b; text-align: center; padding-top: 4px; }
   </style>
 </head>
 <body>
+  <div id="splashScreen" class="splash-screen">
+    <img id="splashImg" class="splash-logo" alt="S.E.N.S.E. Logo" />
+    <div class="splash-title">S.E.N.S.E. MONITOR</div>
+    <div class="splash-sub">Seismic &amp; Smoke Emergency Monitor</div>
+    <div class="splash-track"><div class="splash-fill"></div></div>
+    <div id="splashHint" class="splash-hint">Initializing monitor...</div>
+  </div>
+  <script>
+    (function () {
+      const s = document.getElementById('splashScreen');
+      const icon = document.querySelector('link[rel="icon"]');
+      if (icon) document.getElementById('splashImg').src = icon.href;
+      setTimeout(() => {
+        document.getElementById('splashHint').textContent = 'Ready';
+        s.classList.add('hide');
+        setTimeout(() => s.remove(), 360);
+      }, 3000);
+    })();
+  </script>
   <div id="backdrop" class="backdrop" onclick="closeSidebar()"></div>
   <aside id="sidebar" class="sidebar" aria-label="Control Menu">
     <div class="sb-hdr"><h2>S.E.N.S.E. MENU</h2><button class="sb-close" onclick="closeSidebar()">Close</button></div>
@@ -246,6 +289,53 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
       </div>
       <div id="logMeta" class="sub-dim" style="color:var(--muted);">Recording periodic snapshots...</div>
       <ul id="logList"></ul>
+    </div>
+    <div class="sb-box">
+      <div class="sb-label">About</div>
+      <div class="about-hdr">
+        <img id="aboutLogo" class="about-logo" alt="S.E.N.S.E." />
+        <div>
+          <div class="about-app-name">S.E.N.S.E. Monitor v1.0</div>
+          <div class="about-app-ver">Seismic &amp; Smoke Emergency System</div>
+        </div>
+      </div>
+      <div class="about-desc">Real-time earthquake intensity monitoring, smoke hazard alerts, automatic emergency door unlocking, and data logging.</div>
+      <div class="sb-label">Creators</div>
+      <div class="creator-list">
+        <div class="creator-row">
+          <div class="creator-avatar">AB</div>
+          <div class="creator-info">
+            <div class="creator-name">Abbygial C. Bacha</div>
+            <div class="creator-sec">BETMECT</div>
+            <a class="creator-email" href="mailto:bacha.abbygial@tup.edu.ph">bacha.abbygial@tup.edu.ph</a>
+          </div>
+        </div>
+        <div class="creator-row">
+          <div class="creator-avatar">AG</div>
+          <div class="creator-info">
+            <div class="creator-name">Ace Johnson G. Galvan</div>
+            <div class="creator-sec">BETMECT</div>
+            <a class="creator-email" href="mailto:galvan.acejohnson@gmail.com">galvan.acejohnson@gmail.com</a>
+          </div>
+        </div>
+        <div class="creator-row">
+          <div class="creator-avatar">WM</div>
+          <div class="creator-info">
+            <div class="creator-name">Ward Reinner P. Momo</div>
+            <div class="creator-sec">BETMECT</div>
+            <a class="creator-email" href="mailto:momo.wardreinner@tup.edu.ph">momo.wardreinner@tup.edu.ph</a>
+          </div>
+        </div>
+        <div class="creator-row">
+          <div class="creator-avatar">CR</div>
+          <div class="creator-info">
+            <div class="creator-name">Chrizell Joy E. Robles</div>
+            <div class="creator-sec">BETMECT</div>
+            <a class="creator-email" href="mailto:robles.chrizelljoy@tup.edu.ph">robles.chrizelljoy@tup.edu.ph</a>
+          </div>
+        </div>
+      </div>
+      <div class="about-footer">BETMECT &middot; S.E.N.S.E. Monitor</div>
     </div>
   </aside>
 
@@ -310,7 +400,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
           <div class="chip-row">
             <span id="smokeMeta" class="metric-chip">No Smoke Detected</span>
           </div>
-          <div id="smokeSignal" class="sub-dim">JGN-301-A · Standby</div>
+          <div id="smokeSignal" class="sub-dim">Signal: Standby</div>
         </div>
       </div>
     </section>
@@ -379,7 +469,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
       document.getElementById('smokeBox').className = 'status-box ok';
       document.getElementById('smokeVal').textContent = 'CLEAR';
       document.getElementById('smokeMeta').textContent = 'No Smoke Detected';
-      document.getElementById('smokeSignal').textContent = 'JGN-301-A · Standby';
+      document.getElementById('smokeSignal').textContent = 'Signal: Standby';
       const doorEl = document.getElementById('doorVal');
       doorEl.textContent = 'UNLOCKED (NORMAL)';
       doorEl.className = 'door-state-word';
@@ -433,7 +523,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         document.getElementById('smokeBox').className = 'status-box ' + (d.smokeActive ? 'danger' : 'ok');
         document.getElementById('smokeVal').textContent = d.smokeActive ? 'SMOKE DETECTED!' : 'CLEAR';
         document.getElementById('smokeMeta').textContent = d.smokeActive ? 'Evacuate — Smoke Alarm Active' : 'No Smoke Detected';
-        document.getElementById('smokeSignal').textContent = 'JGN-301-A · ' + (d.smokeRawSignal ? 'ALARMING' : 'Standby');
+        document.getElementById('smokeSignal').textContent = 'Signal: ' + (d.smokeRawSignal ? 'ALARMING' : 'Standby');
 
         const doorEl = document.getElementById('doorVal');
         doorEl.textContent = hazard ? 'EMERGENCY UNLOCKED' : (d.doorUnlocked ? 'UNLOCKED (NORMAL)' : 'LOCKED');
@@ -514,6 +604,8 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
     }
     async function clearServerLogs() { try { await fetchWithTimeout('/api/logs/clear', { method: 'POST' }, 2000); await fetchServerLogs(); } catch (_) {} }
 
+    const appIcon = document.querySelector('link[rel="icon"]');
+    if (appIcon) { const aImg = document.getElementById('aboutLogo'); if (aImg) aImg.src = appIcon.href; }
     pollStatus(); fetchServerLogs();
     setInterval(pollStatus, 800); setInterval(fetchServerLogs, 4000);
   </script>
