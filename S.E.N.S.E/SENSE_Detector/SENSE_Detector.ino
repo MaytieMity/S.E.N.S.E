@@ -3,11 +3,11 @@
  *              with Built-in Wi-Fi Phone Monitor Web App
  *
  * Hardware:
- *   - Input 1 : ADXL345 (I2C 3-axis Accelerometer) -> Earthquake / Seismic detection
+ *   - Input 1 : HM-123 / MPU-6050 (I2C Accelerometer/Gyroscope) -> Earthquake / Seismic detection
  *   - Input 2 : JGN-301-A Smoke Detector -> Interfaced via PC817 optocoupler
  *               (or dry-contact relay if using a relay-modified unit)
  *   - Output  : Electric Doorknob / Solenoid Lock via Relay Module (+ flyback diode)
- *   - Controls: Manual Reset/Lock Button (GPIO 14) & Built-in Status LED (GPIO 2)
+ *   - Controls: Manual Reset/Lock Button (GPIO 14)
  *
  * Phone Monitoring:
  *   - Connects to your Wi-Fi router (configure WIFI_SSID / WIFI_PASSWORD below), OR
@@ -37,10 +37,9 @@ constexpr char AP_PASSWORD[]   = "12345678";
 // -------------------- Pin Definitions --------------------
 constexpr uint8_t PIN_I2C_SDA    = 21;
 constexpr uint8_t PIN_I2C_SCL    = 22;
-constexpr uint8_t PIN_SMOKE_IN   = 32;  // Digital input from JGN-301-A (via optocoupler)
+constexpr uint8_t PIN_SMOKE_IN   = 18;  // Digital input from smoke sensor (GPIO 18 / G18)
 constexpr uint8_t PIN_DOOR_RELAY = 25;  // Drives relay/MOSFET for Electric Doorknob
 constexpr uint8_t PIN_RESET_BTN  = 14;  // Pushbutton to GND: re-lock & clear alarm
-constexpr uint8_t PIN_LED_STATUS = 2;   // Built-in LED on ESP32 DevKit
 
 // -------------------- Logic Polarity Config --------------------
 // Most JGN-301-A + PC817 optocoupler circuits pull the ESP32 pin LOW on alarm.
@@ -53,14 +52,16 @@ constexpr uint8_t SMOKE_ACTIVE_LEVEL = LOW;
 constexpr uint8_t RELAY_UNLOCK_LEVEL = LOW;
 constexpr uint8_t RELAY_LOCK_LEVEL   = (RELAY_UNLOCK_LEVEL == LOW) ? HIGH : LOW;
 
-// -------------------- ADXL345 Registers --------------------
-constexpr uint8_t ADXL345_ADDR        = 0x53;  // Use 0x1D if SDO/ALT pin is tied to 3.3V
-constexpr uint8_t REG_DEVID           = 0x00;  // Expected value: 0xE5
-constexpr uint8_t REG_BW_RATE         = 0x2C;
-constexpr uint8_t REG_POWER_CTL       = 0x2D;
-constexpr uint8_t REG_DATA_FORMAT     = 0x31;
-constexpr uint8_t REG_DATAX0          = 0x32;
-constexpr float   ADXL_G_PER_LSB      = 0.00390625f;  // Full-resolution mode (~3.9 mg/LSB)
+// -------------------- MPU-6050 (HM-123) Registers --------------------
+constexpr uint8_t MPU6050_ADDR_LOW    = 0x68;  // Default when AD0 is LOW or floating
+constexpr uint8_t MPU6050_ADDR_HIGH   = 0x69;  // When AD0 is tied to 3.3V
+constexpr uint8_t REG_SMPLRT_DIV      = 0x19;
+constexpr uint8_t REG_CONFIG          = 0x1A;
+constexpr uint8_t REG_ACCEL_CONFIG    = 0x1C;
+constexpr uint8_t REG_ACCEL_XOUT_H    = 0x3B;
+constexpr uint8_t REG_PWR_MGMT_1      = 0x6B;
+constexpr uint8_t REG_WHO_AM_I        = 0x75;  // Expected 0x68 (or 0x69/0x70-0x72 clones)
+constexpr float   MPU_G_PER_LSB       = 1.0f / 8192.0f;  // +/-4g full scale (AFS_SEL = 1)
 
 // -------------------- Detection & Safety Tuning --------------------
 constexpr float    QUAKE_THRESHOLD_G   = 0.035f; // Detects light tremors (~M4.3+) through major quakes
@@ -79,7 +80,8 @@ constexpr uint16_t DATA_LOG_CAPACITY    = 120;    // Ring buffer capacity in RAM
 // -------------------- State Variables --------------------
 WebServer server(80);
 bool usingApMode = false;
-bool adxlReady   = false;
+bool imuReady    = false;
+uint8_t mpuAddr  = MPU6050_ADDR_LOW;
 
 // Low-pass gravity baseline per axis
 float baseAx = 0.0f, baseAy = 0.0f, baseAz = 1.0f;
@@ -247,7 +249,13 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
     .creator-name { font-size: 0.78rem; font-weight: 700; color: #f8fafc; line-height: 1.25; }
     .creator-sec { font-size: 0.68rem; font-weight: 700; color: #94a3b8; letter-spacing: 0.03em; }
     .creator-email { font-size: 0.68rem; color: #7dd3fc; text-decoration: none; overflow-wrap: anywhere; }
-    .about-footer { font-size: 0.7rem; color: #64748b; text-align: center; padding-top: 4px; }
+    .about-footer { font-size: 0.7rem; color: #64748b; text-align: center; padding-top: 6px; }
+    .acc-btn { width: 100%; display: flex; align-items: center; justify-content: space-between; background: #1a2742; color: #f8fafc; border: 1px solid #2b3c5f; border-radius: 10px; padding: 10px 12px; min-height: 42px; font-size: 0.8rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; cursor: pointer; touch-action: pan-x; transition: background 0.15s ease; }
+    .acc-btn:active { background: #223357; }
+    .acc-chev { font-size: 0.9rem; color: #94a3b8; transition: transform 0.25s ease; }
+    .acc-btn.open .acc-chev { transform: rotate(180deg); color: #38bdf8; }
+    .acc-body { max-height: 0; overflow: hidden; opacity: 0; transition: max-height 0.28s ease, opacity 0.22s ease, margin-top 0.22s ease; display: flex; flex-direction: column; gap: 8px; }
+    .acc-body.open { max-height: 540px; opacity: 1; margin-top: 9px; }
   </style>
 </head>
 <body>
@@ -291,51 +299,64 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
       <ul id="logList"></ul>
     </div>
     <div class="sb-box">
-      <div class="sb-label">About</div>
-      <div class="about-hdr">
-        <img id="aboutLogo" class="about-logo" alt="S.E.N.S.E." />
-        <div>
-          <div class="about-app-name">S.E.N.S.E. Monitor v1.0</div>
-          <div class="about-app-ver">Seismic &amp; Smoke Emergency System</div>
+      <button type="button" class="acc-btn" data-target="aboutDrop" aria-expanded="false" onclick="toggleDropdown(this)">
+        <span>About</span>
+        <span class="acc-chev">&#9662;</span>
+      </button>
+      <div id="aboutDrop" class="acc-body">
+        <div class="about-hdr">
+          <img id="aboutLogo" class="about-logo" alt="S.E.N.S.E." />
+          <div>
+            <div class="about-app-name">S.E.N.S.E. Monitor v1.0</div>
+            <div class="about-app-ver">Seismic &amp; Smoke Emergency System</div>
+          </div>
         </div>
+        <div class="about-desc" style="border-bottom:0; padding-bottom:0;">Real-time earthquake intensity monitoring, smoke hazard alerts, automatic emergency door unlocking, and data logging.</div>
       </div>
-      <div class="about-desc">Real-time earthquake intensity monitoring, smoke hazard alerts, automatic emergency door unlocking, and data logging.</div>
-      <div class="sb-label">Creators</div>
-      <div class="creator-list">
-        <div class="creator-row">
-          <div class="creator-avatar">AB</div>
-          <div class="creator-info">
-            <div class="creator-name">Abbygial C. Bacha</div>
-            <div class="creator-sec">BETMECT</div>
-            <a class="creator-email" href="mailto:bacha.abbygial@tup.edu.ph">bacha.abbygial@tup.edu.ph</a>
+    </div>
+
+    <div class="sb-box">
+      <button type="button" class="acc-btn" data-target="creatorsDrop" aria-expanded="false" onclick="toggleDropdown(this)">
+        <span>Creators</span>
+        <span class="acc-chev">&#9662;</span>
+      </button>
+      <div id="creatorsDrop" class="acc-body">
+        <div class="creator-list">
+          <div class="creator-row">
+            <div class="creator-avatar">AB</div>
+            <div class="creator-info">
+              <div class="creator-name">Abbygial C. Bacha</div>
+              <div class="creator-sec">BETMECT</div>
+              <a class="creator-email" href="mailto:bacha.abbygial@tup.edu.ph">bacha.abbygial@tup.edu.ph</a>
+            </div>
+          </div>
+          <div class="creator-row">
+            <div class="creator-avatar">AG</div>
+            <div class="creator-info">
+              <div class="creator-name">Ace Johnson G. Galvan</div>
+              <div class="creator-sec">BETMECT</div>
+              <a class="creator-email" href="mailto:galvan.acejohnson@gmail.com">galvan.acejohnson@gmail.com</a>
+            </div>
+          </div>
+          <div class="creator-row">
+            <div class="creator-avatar">WM</div>
+            <div class="creator-info">
+              <div class="creator-name">Ward Reinner P. Momo</div>
+              <div class="creator-sec">BETMECT</div>
+              <a class="creator-email" href="mailto:momo.wardreinner@tup.edu.ph">momo.wardreinner@tup.edu.ph</a>
+            </div>
+          </div>
+          <div class="creator-row">
+            <div class="creator-avatar">CR</div>
+            <div class="creator-info">
+              <div class="creator-name">Chrizell Joy E. Robles</div>
+              <div class="creator-sec">BETMECT</div>
+              <a class="creator-email" href="mailto:robles.chrizelljoy@tup.edu.ph">robles.chrizelljoy@tup.edu.ph</a>
+            </div>
           </div>
         </div>
-        <div class="creator-row">
-          <div class="creator-avatar">AG</div>
-          <div class="creator-info">
-            <div class="creator-name">Ace Johnson G. Galvan</div>
-            <div class="creator-sec">BETMECT</div>
-            <a class="creator-email" href="mailto:galvan.acejohnson@gmail.com">galvan.acejohnson@gmail.com</a>
-          </div>
-        </div>
-        <div class="creator-row">
-          <div class="creator-avatar">WM</div>
-          <div class="creator-info">
-            <div class="creator-name">Ward Reinner P. Momo</div>
-            <div class="creator-sec">BETMECT</div>
-            <a class="creator-email" href="mailto:momo.wardreinner@tup.edu.ph">momo.wardreinner@tup.edu.ph</a>
-          </div>
-        </div>
-        <div class="creator-row">
-          <div class="creator-avatar">CR</div>
-          <div class="creator-info">
-            <div class="creator-name">Chrizell Joy E. Robles</div>
-            <div class="creator-sec">BETMECT</div>
-            <a class="creator-email" href="mailto:robles.chrizelljoy@tup.edu.ph">robles.chrizelljoy@tup.edu.ph</a>
-          </div>
-        </div>
+        <div class="about-footer">BETMECT &middot; S.E.N.S.E. Monitor</div>
       </div>
-      <div class="about-footer">BETMECT &middot; S.E.N.S.E. Monitor</div>
     </div>
   </aside>
 
@@ -347,10 +368,6 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
             <line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/>
           </svg>
         </button>
-        <div class="brand-pill" style="padding:0 16px 0 10px;">
-          <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAA8GSURBVGhD1dl5XNT1vsfxn4qArLIvsu8wbMMyLAMMwyL7DgKigrLJPqwiIOaSmtXtmD2qaw/NMjsnyzyZmZl61dyjxB2PpamZZpqda6ulr/uYn9ExBs3qj5vfx+P5mGGY+X3fn+98fsvMCMI9hn3iPP4Khub6zWGfMJe/oqE5hx128XP4Kxua91fDLv4hHgRDc4vDLm42D5JfhR+n7OVB9J8CYnv4s3ZU+fNtszl06kL3SOgZAd13Gin+73qzJe9WBGi8/o+4HV7RzZ9xtdkKukaIbrSa8UGNDy9PjWbxxFS6CrLoKsjk0ZIUXp0qp7/Gi5ttpreL6RrFxaZxGtv7vQTbmC7+iAsqO+gWoHMMu6r9UBUUEpzcztiYOQhBsxkTsxCHnKU4ZC9FJ3oRQtAszBQPIUtppaOwgAPTvaFTRyzm4wZnje3fL8E2Zia/l9gmXaPYWy0hN6MCk9j56CsXoxvei33CQyx9eTsnP7nIqXOfc/rTywyc+YwFz23CPnEOxjFzGaNYhJlyLhOzp9Jf4wld6vbS15jnfgi20Z3cr7fLg8RWudluRG9hJiaKOegrFmAT14txRCehRYv55LMrbNp1hKTqpwjIewT/3AWk1zzN/sNn2P7+v9ALbsVS0Y1N/O13yTJ2NosnJkOHgbgoa0ojNOa9F8Emagb3Y9M0dXiBqypLMtOmMSpqARaxvdgoe7CI6cY2touPP73MY89vxiyijaWrt9M/8CnvHzvLoyu34JE2l4TyJ2h7fC2O42djpejGVtmDeWwvo6IepiRzMl+3mIkt9WpZhMb8dyPYyDu4H8wcwRWVBYqkGrSj5mMT242NeiUVPehIW5i/bBM7+k5iLFNx9PQl1m09SEz1cyQ3reKVTX1k1j2NQWgzBwfOUzP37+gFt9zeRmw31rE9aMkfJj21gm9a1UVoacx/N4JNZDu/hRk63GgzIiOlDK3Ief8JH9uNlaIL4/A29h4+Q0HTfzP/2Y2s39aP4N3AeGUhytiJCG41zH/2LRoeXkPF7JfYvOcE+iEtWETPxFQ+A/OoTqwVXYySz2NyRsntdpphoJFjOIJ1RBv3cqnBBrpG05OfhhD+EFYxnb9iLm/HIaGLvqOfEJK7gG37/kW66nlk8mLo1IMWYzzDyqhesI6X3txPRNEisRhBUoONYgbeabNxSerBMLQZ3aAmRoT18kRRAnSP4lSti0aeoQTriFbuhR6BvZXeGEbMxEw+A6vo9p91YB3VjkVkG7aKDvqOnkFWsIDXtx5k2txX8QybxsX6cZyudWZcSAWNi19n1Yb9CJ6VeKd2s2zNDgbOXOLTy9c4feEK7+4+wZTOFegENWMS1sLxWlfx6DQ0z1CCdXgLd/OVygI69EhLmoxOeBfW8jaso1qxUpO3iywj29ALrGfDjsNU9q5katdyXly/lxF+TbhFN+Ikb8Q4rI3Ne46RUbOE+LLFfPHldb774QafXLjIwJlzDJw+x5Vr/+bWrZusWLsTraAOilPyoVOb83V2GrnuJFiFNXM36rdx5zRfxoR1YCFvux08qlUMbRnZiqVcrYUxgbUUqp7l8KnzuCX14Du+Ax95NQbhMzCJUD+3BWnuPCRpPVz4/CsuX73GK2/vom3RS7QsXM2qf+7gvb4j9A+c4cefbvDI8ncYJanjUJUrzNTSyHUnwUqmYjh7yr3E3q9Kz2ZUSCeWEc2/VG0V3oJleLPIIlyFebgKk5AGGh9+GcfxswgPK2FhejI6oW1YhDeJzxFcypj/zFuox/LXtuKeOAMd32pGeVVhGtLII89tYNfBYxz/6CyffX4F98zFqJKV4mH1zdJAjXyDBKvQJobzg8qU603muMurMZK1YhXW9LNGrGSNWIQ1YR7WhKlMfavCQtaIrqSKkUEtVCfmcXSCL0ahKsxkao0Y+lXz7u5jfPP9d6RXPoaWZzmmIQ1Is2ZjF9WMc2wbW/YeYv+hAS5dvUbDwrV4SYv4qcWIq/VWGvkGCZYhjQyHztHsKvdEP0iFWWgDFqH1WMgaxKDmskYsh7mv/v+o4FaWpsVxq9QB/4gKDEObMA+pZ4xvBVt2HxN7P7poPqO9K9CVVBJbsoDZT65DcC1j9fo9fHD8Yz668DlLVm1Fx6uC41VO0DFGI98gwTKkgeGo+/+5CeFo+auwCK7FPLhWvLUIrsNSLaQOvaAmchVFTFBMYIy0CfPgOgykjezMCYaptkxW5KEd2CQ+X3CfRsfiNWILvfj6TkwCqxntUcaSlZt46qWtCM6lvLX9IB8e/5iBMxd4ctVmBLfprJ0UKJ7YhuYbJFgG1zMc9TV8b2YsI3ybMJPWiMyl0zEIqGOstB4LaQ0j/Bp4OT2GF9NiGOnXgGFgHa7BFVwu9IAp1jyVHCs+bhRYS7SsBPuQSja9d1gs4tTZywycvsSVr77GJ64Vv6ROzl68yr6DJzn+0TnaF72M4FTFkvxIcT8Ymm+QoF7J4agLaEqJR/CpxySgWjTSt4ZtmSE8GqdE8G5kfEQhFDnwfYEzwSElCD4NzI+L58sCF5YnyrlR5IJHUCnu0incnODAfGUCgvd0BKcSBLsiBKMMLIIq2bijnxs3b7Hzg2PsO3SCJSs3YhVUzdjwDnrT5LcLGCajmmAROJ3h0DOS3vRoBM9aTP3UO9x0gqTF3Mx35KOcAEZLqlmoUEKhHRQ6UBuViuBVx7bUIA6k+6MIyRWLyw7LoTw8FSZa80qiDMFhEiMci3GPaWL2f63hc/Gk9pO48rv6jrDm7d2Y+0+jov0ZvDPmsyhNKrbQ0HyDBPOAaobDLC2W5YcgeFRj6FuO4FXNU0oFFNhDvjNTw1LoSw1gd1Igp9K9WJcUhoGkjGvZHiyLl6MrmcqXOe6sjpcxJ0rJVIkMO98SCmqeYO3b+/nq+vfivnD6/GV27D/E9v0H+duKN7AKLCd50jzWbd7L2OB6/jFBfT7S0sg3SDAPqGI4dOmyp8wFQ+/JGEhK8fIr4HqWO6/Fh7IvyZ8vMjwg14WC4GSWKKK5mOlFqjQV8pyZFp6E4F7J5hQZKyKlaDvmUTRjOUc/viSG/vr7G5w6+xm7PzzKW9v388zqjaSWzkfftZDiusd4/8gAC599ndFOhRyrsBcvZ4bmGySY+1cynG9UpvzUZMzpdAnnkiVcT3ODbCdcJQVUypIh14Grae6YeE8kX5bBT1kuvKmU8nWmO9GBWcQHZ+HhnoF94CTWbukTg1+8co19hwd49Z1dLHrmVaaoliBRNmLqMwl59kyeXrWR9/oOsePAIaQZvXj6pIsnsi/qzTXyDRLM/CoYznulbjBTm/5sd1ZEhPNidDg1IYnoeUzCQ1LA16nuvBUbgrbnZHx8cvkiyQuyXNiX4IfMN4NlMWEITsVsPXCSm7dusW1fP72PrUKZ3419cAXW/lMISm5l+sxnWfnaFrYd6GdX32HxmqisZQmCVQkdyXLoGcX6EolGvkGCmW85d0P3aN4s9kCwn4qvJI/xfmm8FhdGon8KT0XKqQ5KoFYWT6QkgzcVMsiw5+nISJJ8k0l1Dmfm3/7JTfW1zz82EaBsYKxHEeOLennk6ddYv2Ufew4e44MjJ9nbf4xt+/t5Ye1W0ibPZcS4PPRcJnKk3EG8Hhua606CmWQad3O13lz8ZBQWnEKqTyrkOEGWA6tiQrF1z8fRPZsT4yVUhyZQJ42DtHGU+yvJ9k/GR5LL8TOXeWPLfgxdc4nP6+KdXR+y78gJNuw4wAuvb2HJ8jeY/fhqKjuWEpPdiYlHESNtMhAcJlMcpYSZOpyvsdXIdSfB1Gcq90KPFnumOCHYTeT5yDDIcOR6ijv2btl4eWRAhjOrokIJ8Ujhh2Q3oj0SKZfIiUpRcfbyl4QmNzG+cBY7+o7QMmcZspQWxgWWYuxWgI59DiOtMxAs08Tg+k656LhMwNAlnxNV48QOGJpnKMHUp4x7+bTWGnp0USVEMMKmgMNxfpBux6ygSFQBMZDmyEdKT7xc0lgfFYbcI5knJf7IkpvZe+gUVt4TWLb6baIz2xGMEhCs0tC2y0LXIQc9p1z0nPPQ/5mecz6CbTGPpwWKC3eyyk4jz1CCqXcpv0X92fbHdmOipIlY2eVyNs6Hf8e5cTJawg9xLtxMcCXDOxGZWzJZXgmcUvjg6FvEirX/g19MDYVVixBMktB3zP1ZnrjaIsdcDJzyxMcEq4kUhceIbUu7gUaO4QgmXlO4H/SM5lqTOf4+SdjaZnNc4QuJTlyPdYUEVx6XRiBY5tPuJ4dUdxLswslsWEJCXhcmrgXo2Wdh5JQrMlRzvH07+LdgVcR4qZJvm42hW1tj/rsRTDwncz/eKPaGWaO51miKIjAeLasClgfJIM4dlM7sC/MTjx5/Dw0FpRPvyyTYueXhHVOLjk0Gxo7ZGDpkYeSYhaFjDoYO2Rg55aDrkI9gVUhhWBTfNo8VF+r5PF+N+e9GMPGYxP1aV+QlTkCbMW3xoQg2BcQ4JbM9VMr3Ck+S3eM5FiHhVrQrKF15I1gqhle3iLFjDsbqAhyyxPsG6paxKcTAPodFKf7QoS/utCvzJBrz3osw1r2E30v9RSyzdNhb6og8QIlgnUeoQyoprglsCZFyKdKbn+RufBbpg61TNmMcbxegXnWtcbkI1hPQsculICyawxV2MEtb/DJr6Dz3QxjrXswfcbrGBnpHw0x9dk52YpI8AhePNHTHZWNuk4mPXRr+DhniKqsDCzb56NllI/FMRqUMpW+aPXTpieGPV43T2P79Esa6FfFnXFSf7Hq0xXfkx+axHCizZ3muN13jg6hXyuiID2VBciCr87zon2YnflMnFj5Ll3O11hrb+73EX2mMXQv5szZNdOF/G01vr2qvNszWvn2rDisGHi0ejr9sMGPDRHeN1/8Rv/xGZuwygQfRLwWIRTgX8CD5VfjBYeSUz4NgaO5fDSOnPP7KhuYddhg55vJXNDTnbw5DB/XJ5//f0Fx3jv8DdT2y9p5YRVoAAAAASUVORK5CYII=" alt="S.E.N.S.E. Logo" width="28" height="28" style="border-radius:7px;display:block;" />
-          <span>S.E.N.S.E MONITOR</span>
-        </div>
       </div>
       <div id="connPill" class="status-pill err"><span class="dot"></span><span id="connText">OFFLINE</span></div>
     </header>
@@ -435,6 +452,24 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
     function openSidebar() { sidebar.classList.add('open'); backdrop.classList.add('open'); }
     function closeSidebar() { sidebar.classList.remove('open'); backdrop.classList.remove('open'); }
     function toggleSidebar() { sidebar.classList.contains('open') ? closeSidebar() : openSidebar(); }
+    function setDropdown(btn, open) {
+      const panel = document.getElementById(btn.dataset.target);
+      if (!panel) return;
+      btn.classList.toggle('open', open);
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      panel.classList.toggle('open', open);
+    }
+    function toggleDropdown(btn) { setDropdown(btn, !btn.classList.contains('open')); }
+    document.querySelectorAll('.acc-btn').forEach(btn => {
+      let sy = null;
+      btn.addEventListener('touchstart', e => { sy = e.touches[0].clientY; }, { passive: true });
+      btn.addEventListener('touchend', e => {
+        if (sy === null) return;
+        const dy = e.changedTouches[0].clientY - sy; sy = null;
+        if (dy > 20) setDropdown(btn, true);
+        else if (dy < -20) setDropdown(btn, false);
+      }, { passive: true });
+    });
     let dragStartX = null, dragActive = false, dragOpen = false;
     document.addEventListener('touchstart', e => {
       const x = e.touches[0].clientX; dragOpen = sidebar.classList.contains('open');
@@ -622,67 +657,82 @@ const char MANIFEST_JSON[] PROGMEM = R"rawliteral({
   "theme_color": "#000000"
 })rawliteral";
 
-// -------------------- ADXL345 Helpers --------------------
-bool writeAdxlRegister(uint8_t reg, uint8_t val) {
-  Wire.beginTransmission(ADXL345_ADDR);
+// -------------------- MPU-6050 (HM-123) Helpers --------------------
+bool writeMpuRegister(uint8_t addr, uint8_t reg, uint8_t val) {
+  Wire.beginTransmission(addr);
   Wire.write(reg);
   Wire.write(val);
   return Wire.endTransmission() == 0;
 }
 
-bool readAdxlRegister(uint8_t reg, uint8_t &val) {
-  Wire.beginTransmission(ADXL345_ADDR);
+bool readMpuRegister(uint8_t addr, uint8_t reg, uint8_t &val) {
+  Wire.beginTransmission(addr);
   Wire.write(reg);
   if (Wire.endTransmission(false) != 0) {
     return false;
   }
-  if (Wire.requestFrom(ADXL345_ADDR, static_cast<uint8_t>(1)) != 1) {
+  if (Wire.requestFrom(addr, static_cast<uint8_t>(1)) != 1) {
     return false;
   }
   val = Wire.read();
   return true;
 }
 
-bool readAdxlAccel(float &ax, float &ay, float &az) {
-  Wire.beginTransmission(ADXL345_ADDR);
-  Wire.write(REG_DATAX0);
+bool readMpuAccel(float &ax, float &ay, float &az) {
+  Wire.beginTransmission(mpuAddr);
+  Wire.write(REG_ACCEL_XOUT_H);
   if (Wire.endTransmission(false) != 0) {
     return false;
   }
-  if (Wire.requestFrom(ADXL345_ADDR, static_cast<uint8_t>(6)) != 6) {
+  if (Wire.requestFrom(mpuAddr, static_cast<uint8_t>(6)) != 6) {
     return false;
   }
 
-  uint8_t x0 = Wire.read(), x1 = Wire.read();
-  uint8_t y0 = Wire.read(), y1 = Wire.read();
-  uint8_t z0 = Wire.read(), z1 = Wire.read();
+  uint8_t xh = Wire.read(), xl = Wire.read();
+  uint8_t yh = Wire.read(), yl = Wire.read();
+  uint8_t zh = Wire.read(), zl = Wire.read();
 
-  int16_t rawX = static_cast<int16_t>((static_cast<uint16_t>(x1) << 8) | x0);
-  int16_t rawY = static_cast<int16_t>((static_cast<uint16_t>(y1) << 8) | y0);
-  int16_t rawZ = static_cast<int16_t>((static_cast<uint16_t>(z1) << 8) | z0);
+  int16_t rawX = static_cast<int16_t>((static_cast<uint16_t>(xh) << 8) | xl);
+  int16_t rawY = static_cast<int16_t>((static_cast<uint16_t>(yh) << 8) | yl);
+  int16_t rawZ = static_cast<int16_t>((static_cast<uint16_t>(zh) << 8) | zl);
 
-  ax = rawX * ADXL_G_PER_LSB;
-  ay = rawY * ADXL_G_PER_LSB;
-  az = rawZ * ADXL_G_PER_LSB;
+  ax = rawX * MPU_G_PER_LSB;
+  ay = rawY * MPU_G_PER_LSB;
+  az = rawZ * MPU_G_PER_LSB;
   return true;
 }
 
-bool initAdxl345() {
-  uint8_t devId = 0;
-  if (!readAdxlRegister(REG_DEVID, devId) || devId != 0xE5) {
+bool probeMpuAddress(uint8_t addr) {
+  uint8_t who = 0;
+  if (!readMpuRegister(addr, REG_WHO_AM_I, who)) {
+    return false;
+  }
+  return (who != 0x00 && who != 0xFF);
+}
+
+bool initMpu6050() {
+  if (probeMpuAddress(MPU6050_ADDR_LOW)) {
+    mpuAddr = MPU6050_ADDR_LOW;
+  } else if (probeMpuAddress(MPU6050_ADDR_HIGH)) {
+    mpuAddr = MPU6050_ADDR_HIGH;
+  } else {
     return false;
   }
 
-  writeAdxlRegister(REG_BW_RATE, 0x0A);     // 100 Hz output data rate
-  writeAdxlRegister(REG_DATA_FORMAT, 0x08); // FULL_RES, +/-2g
-  writeAdxlRegister(REG_POWER_CTL, 0x08);   // Enable measurement mode
+  if (!writeMpuRegister(mpuAddr, REG_PWR_MGMT_1, 0x01)) {  // Wake up & use PLL X-gyro ref
+    return false;
+  }
   delay(30);
+  writeMpuRegister(mpuAddr, REG_CONFIG, 0x03);        // DLPF ~44 Hz bandwidth
+  writeMpuRegister(mpuAddr, REG_SMPLRT_DIV, 0x09);    // 100 Hz sample rate
+  writeMpuRegister(mpuAddr, REG_ACCEL_CONFIG, 0x08);  // +/-4g range
+  delay(20);
 
   float sumX = 0.0f, sumY = 0.0f, sumZ = 0.0f;
   int valid = 0;
   for (int i = 0; i < 40; i++) {
     float ax, ay, az;
-    if (readAdxlAccel(ax, ay, az)) {
+    if (readMpuAccel(ax, ay, az)) {
       sumX += ax;
       sumY += ay;
       sumZ += az;
@@ -810,7 +860,7 @@ void handleStatusApi() {
            "\"smokeActive\":%s,\"smokeRawSignal\":%s,\"doorUnlocked\":%s,"
            "\"uptimeSec\":%lu,\"wifiMode\":\"%s\",\"ip\":\"%s\"}",
            quakeActive ? "true" : "false",
-           adxlReady ? "true" : "false",
+           imuReady ? "true" : "false",
            currentTremorG,
            peakTremorG,
            pgaCms2,
@@ -1010,13 +1060,13 @@ void setupWiFiAndServer() {
 
 // -------------------- Sensor Updates --------------------
 void updateEarthquakeSensor(uint32_t now) {
-  if (!adxlReady || (now - lastQuakeSampleMs < QUAKE_SAMPLE_MS)) {
+  if (!imuReady || (now - lastQuakeSampleMs < QUAKE_SAMPLE_MS)) {
     return;
   }
   lastQuakeSampleMs = now;
 
   float ax, ay, az;
-  if (!readAdxlAccel(ax, ay, az)) {
+  if (!readMpuAccel(ax, ay, az)) {
     return;
   }
 
@@ -1090,19 +1140,11 @@ void updateSmokeSensor(uint32_t now) {
   }
 }
 
-void updateDoorAndStatus(uint32_t now) {
+void updateDoorAndStatus() {
   // Always force door unlocked during earthquake or smoke;
   // otherwise keep the current normal (unlocked) or manually-locked state.
   if (quakeActive || smokeActive) {
     setDoorUnlocked(true);
-  }
-
-  if (quakeActive || smokeActive) {
-    digitalWrite(PIN_LED_STATUS, (now / 150) % 2);  // Fast blink on emergency
-  } else if (!doorUnlocked) {
-    digitalWrite(PIN_LED_STATUS, HIGH);             // Solid ON when manually locked
-  } else {
-    digitalWrite(PIN_LED_STATUS, (now % 2000) < 150 ? HIGH : LOW);  // Heartbeat in normal use
   }
 }
 
@@ -1167,20 +1209,19 @@ void printTelemetry(uint32_t now) {
 void setup() {
   Serial.begin(115200);
   delay(200);
-  Serial.println("\n=== S.E.N.S.E. ADXL345 + JGN-301-A + Electric Doorknob ===");
+  Serial.println("\n=== S.E.N.S.E. HM-123 (MPU-6050) + Smoke(G18) + Electric Doorknob ===");
 
   pinMode(PIN_SMOKE_IN, (SMOKE_ACTIVE_LEVEL == LOW) ? INPUT_PULLUP : INPUT_PULLDOWN);
   pinMode(PIN_RESET_BTN, INPUT_PULLUP);
-  pinMode(PIN_LED_STATUS, OUTPUT);
   digitalWrite(PIN_DOOR_RELAY, RELAY_UNLOCK_LEVEL);  // Default: normal open/close use
   pinMode(PIN_DOOR_RELAY, OUTPUT);
 
   Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
-  adxlReady = initAdxl345();
-  if (adxlReady) {
-    Serial.println("[READY] ADXL345 initialized (I2C 0x53).");
+  imuReady = initMpu6050();
+  if (imuReady) {
+    Serial.printf("[READY] HM-123 (MPU-6050) initialized at I2C 0x%02X.\n", mpuAddr);
   } else {
-    Serial.println("[WARN] ADXL345 not detected! Check SDA(21), SCL(22), and CS->3.3V.");
+    Serial.println("[WARN] MPU-6050 not detected! Check VCC(3.3V), GND, SDA(21), SCL(22).");
   }
 
   setupWiFiAndServer();
@@ -1194,7 +1235,7 @@ void loop() {
   handleResetButton(now);
   updateEarthquakeSensor(now);
   updateSmokeSensor(now);
-  updateDoorAndStatus(now);
+  updateDoorAndStatus();
   updatePeriodicDataLog(now);
   printTelemetry(now);
 }

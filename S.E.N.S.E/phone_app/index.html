@@ -443,7 +443,13 @@
     .creator-name { font-size: 0.78rem; font-weight: 700; color: #f8fafc; line-height: 1.25; }
     .creator-sec { font-size: 0.68rem; font-weight: 700; color: #94a3b8; letter-spacing: 0.03em; }
     .creator-email { font-size: 0.68rem; color: #7dd3fc; text-decoration: none; overflow-wrap: anywhere; }
-    .about-footer { font-size: 0.7rem; color: #64748b; text-align: center; padding-top: 4px; }
+    .about-footer { font-size: 0.7rem; color: #64748b; text-align: center; padding-top: 6px; }
+    .acc-btn { width: 100%; display: flex; align-items: center; justify-content: space-between; background: #1a2742; color: #f8fafc; border: 1px solid #2b3c5f; border-radius: 10px; padding: 10px 12px; min-height: 42px; font-size: 0.8rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; cursor: pointer; touch-action: pan-x; transition: background 0.15s ease; }
+    .acc-btn:active { background: #223357; }
+    .acc-chev { font-size: 0.9rem; color: #94a3b8; transition: transform 0.25s ease; }
+    .acc-btn.open .acc-chev { transform: rotate(180deg); color: #38bdf8; }
+    .acc-body { max-height: 0; overflow: hidden; opacity: 0; transition: max-height 0.28s ease, opacity 0.22s ease, margin-top 0.22s ease; display: flex; flex-direction: column; gap: 8px; }
+    .acc-body.open { max-height: 540px; opacity: 1; margin-top: 9px; }
   </style>
 </head>
 <body>
@@ -531,51 +537,64 @@
     </div>
 
     <div class="sb-box">
-      <div class="sb-label">About</div>
-      <div class="about-hdr">
-        <img id="aboutLogo" class="about-logo" alt="S.E.N.S.E." />
-        <div>
-          <div class="about-app-name">S.E.N.S.E. Monitor v1.0</div>
-          <div class="about-app-ver">Seismic &amp; Smoke Emergency System</div>
+      <button type="button" class="acc-btn" data-target="aboutDrop" aria-expanded="false" onclick="toggleDropdown(this)">
+        <span>About</span>
+        <span class="acc-chev">&#9662;</span>
+      </button>
+      <div id="aboutDrop" class="acc-body">
+        <div class="about-hdr">
+          <img id="aboutLogo" class="about-logo" alt="S.E.N.S.E." />
+          <div>
+            <div class="about-app-name">S.E.N.S.E. Monitor v1.0</div>
+            <div class="about-app-ver">Seismic &amp; Smoke Emergency System</div>
+          </div>
         </div>
+        <div class="about-desc" style="border-bottom:0; padding-bottom:0;">Real-time earthquake intensity monitoring, smoke hazard alerts, automatic emergency door unlocking, and data logging.</div>
       </div>
-      <div class="about-desc">Real-time earthquake intensity monitoring, smoke hazard alerts, automatic emergency door unlocking, and data logging.</div>
-      <div class="sb-label">Creators</div>
-      <div class="creator-list">
-        <div class="creator-row">
-          <div class="creator-avatar">AB</div>
-          <div class="creator-info">
-            <div class="creator-name">Abbygial C. Bacha</div>
-            <div class="creator-sec">BETMECT</div>
-            <a class="creator-email" href="mailto:bacha.abbygial@tup.edu.ph">bacha.abbygial@tup.edu.ph</a>
+    </div>
+
+    <div class="sb-box">
+      <button type="button" class="acc-btn" data-target="creatorsDrop" aria-expanded="false" onclick="toggleDropdown(this)">
+        <span>Creators</span>
+        <span class="acc-chev">&#9662;</span>
+      </button>
+      <div id="creatorsDrop" class="acc-body">
+        <div class="creator-list">
+          <div class="creator-row">
+            <div class="creator-avatar">AB</div>
+            <div class="creator-info">
+              <div class="creator-name">Abbygial C. Bacha</div>
+              <div class="creator-sec">BETMECT</div>
+              <a class="creator-email" href="mailto:bacha.abbygial@tup.edu.ph">bacha.abbygial@tup.edu.ph</a>
+            </div>
+          </div>
+          <div class="creator-row">
+            <div class="creator-avatar">AG</div>
+            <div class="creator-info">
+              <div class="creator-name">Ace Johnson G. Galvan</div>
+              <div class="creator-sec">BETMECT</div>
+              <a class="creator-email" href="mailto:galvan.acejohnson@gmail.com">galvan.acejohnson@gmail.com</a>
+            </div>
+          </div>
+          <div class="creator-row">
+            <div class="creator-avatar">WM</div>
+            <div class="creator-info">
+              <div class="creator-name">Ward Reinner P. Momo</div>
+              <div class="creator-sec">BETMECT</div>
+              <a class="creator-email" href="mailto:momo.wardreinner@tup.edu.ph">momo.wardreinner@tup.edu.ph</a>
+            </div>
+          </div>
+          <div class="creator-row">
+            <div class="creator-avatar">CR</div>
+            <div class="creator-info">
+              <div class="creator-name">Chrizell Joy E. Robles</div>
+              <div class="creator-sec">BETMECT</div>
+              <a class="creator-email" href="mailto:robles.chrizelljoy@tup.edu.ph">robles.chrizelljoy@tup.edu.ph</a>
+            </div>
           </div>
         </div>
-        <div class="creator-row">
-          <div class="creator-avatar">AG</div>
-          <div class="creator-info">
-            <div class="creator-name">Ace Johnson G. Galvan</div>
-            <div class="creator-sec">BETMECT</div>
-            <a class="creator-email" href="mailto:galvan.acejohnson@gmail.com">galvan.acejohnson@gmail.com</a>
-          </div>
-        </div>
-        <div class="creator-row">
-          <div class="creator-avatar">WM</div>
-          <div class="creator-info">
-            <div class="creator-name">Ward Reinner P. Momo</div>
-            <div class="creator-sec">BETMECT</div>
-            <a class="creator-email" href="mailto:momo.wardreinner@tup.edu.ph">momo.wardreinner@tup.edu.ph</a>
-          </div>
-        </div>
-        <div class="creator-row">
-          <div class="creator-avatar">CR</div>
-          <div class="creator-info">
-            <div class="creator-name">Chrizell Joy E. Robles</div>
-            <div class="creator-sec">BETMECT</div>
-            <a class="creator-email" href="mailto:robles.chrizelljoy@tup.edu.ph">robles.chrizelljoy@tup.edu.ph</a>
-          </div>
-        </div>
+        <div class="about-footer">BETMECT &middot; S.E.N.S.E. Monitor</div>
       </div>
-      <div class="about-footer">BETMECT &middot; S.E.N.S.E. Monitor</div>
     </div>
   </aside>
 
@@ -587,10 +606,6 @@
             <line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/>
           </svg>
         </button>
-        <div class="brand-pill" style="padding:0 16px 0 10px;">
-          <img src="data:image/png;base64,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" alt="S.E.N.S.E. Logo" width="28" height="28" style="border-radius:7px;display:block;" />
-          <span>S.E.N.S.E MONITOR</span>
-        </div>
       </div>
       <div id="connPill" class="status-pill err"><span class="dot"></span><span id="connText">OFFLINE</span></div>
     </header>
@@ -682,6 +697,28 @@
     function openSidebar() { sidebar.classList.add('open'); backdrop.classList.add('open'); }
     function closeSidebar() { sidebar.classList.remove('open'); backdrop.classList.remove('open'); }
     function toggleSidebar() { sidebar.classList.contains('open') ? closeSidebar() : openSidebar(); }
+
+    function setDropdown(btn, open) {
+      const panel = document.getElementById(btn.dataset.target);
+      if (!panel) return;
+      btn.classList.toggle('open', open);
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      panel.classList.toggle('open', open);
+    }
+    function toggleDropdown(btn) {
+      setDropdown(btn, !btn.classList.contains('open'));
+    }
+    document.querySelectorAll('.acc-btn').forEach(btn => {
+      let sy = null;
+      btn.addEventListener('touchstart', e => { sy = e.touches[0].clientY; }, { passive: true });
+      btn.addEventListener('touchend', e => {
+        if (sy === null) return;
+        const dy = e.changedTouches[0].clientY - sy;
+        sy = null;
+        if (dy > 20) setDropdown(btn, true);
+        else if (dy < -20) setDropdown(btn, false);
+      }, { passive: true });
+    });
 
     let dragStartX = null, dragActive = false, dragOpen = false;
     document.addEventListener('touchstart', e => {
